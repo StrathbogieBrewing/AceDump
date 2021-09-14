@@ -5,10 +5,10 @@
 #include "AceBMS.h"
 #include "AceBus.h"
 #include "AceDump.h"
-#include "ssr.h"
 
 #define VMAX (27000)
 #define VMIN (26500)
+#define VSET (26700)
 
 #define LED_RED (3)
 #define LED_GREEN (4)
@@ -24,42 +24,21 @@
 
 #define VBAT_SENSE (A1)
 
+#define ZCD_TIMEOUT (100)
+
 #define kRxInterruptPin (2)
 void aceCallback(tinframe_t *frame);
 AceBus aceBus(Serial, kRxInterruptPin, aceCallback);
 
 static unsigned long lastBMSUpdate = 0;
-static int dutyCycle = 0;
-static int batmv = 0;
-static int ssrState = 0;
+static uint16_t batmv = 0;
+static uint16_t setmv = VSET;
 
-static volatile unsigned char zcdCounter = 0;
-void zcdTriggered(void) { zcdCounter++; }
+static uint16_t ssrOn = 0;
+static uint16_t ssrOff = 0;
 
-void zcdUpdate(void) {
-  static unsigned long lastMillis = 0;
-  static unsigned char lastCounter = 0;
-
-  unsigned long newMillis = millis();
-  unsigned long periodMillis = newMillis - lastMillis;
-
-  if(periodMillis > 25){
-    digitalWrite(LED_RED, HIGH);  // show no AC present
-  }
-
-  if (lastCounter == zcdCounter)
-    return; // no change
-  lastCounter = zcdCounter;
-
-  lastMillis = newMillis;
-
-  if (periodMillis < 5)
-    return; // blank spurious zero crossings less than 5 ms
-
-  if ((periodMillis > 15) && (periodMillis < 25)) {
-    ssrState = ssr_update(dutyCycle) & 0x01;  // update ssr if period is reasonable
-  }
-}
+static volatile unsigned char zcdCount = 0;
+void zcdTriggered(void) { zcdCount++; }
 
 void setup() {
   wdt_disable();
@@ -82,34 +61,82 @@ void setup() {
   pinMode(ATEN_1, OUTPUT);
 
   attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(ZCD_DETECT),
-                           zcdTriggered, RISING);
+                           zcdTriggered, FALLING);
   aceBus.begin();
+}
+
+void update_adc(void) {
+  static uint16_t adc_filter = 0;
+  uint16_t adc = analogRead(VBAT_SENSE); // use local vbat for control
+  if (adc > 800)
+    adc = 800; // limit adc to 32 V
+  adc_filter -= (adc_filter >> 6);
+  adc_filter += adc;
+  batmv = (adc_filter >> 3) * 5; // convert to mv
+}
+
+void update_1ms(void) {
+  static unsigned char zcdLastCount = 0;
+  static uint8_t milliSeconds = 0;
+  static bool positiveCycle = false;
+
+  update_adc();  // update batterry voltage
+
+  if (milliSeconds < ZCD_TIMEOUT) {
+    milliSeconds++;
+  } else {
+    digitalWrite(LED_RED, HIGH); // show no AC present
+  }
+
+  if (milliSeconds == 5) {
+    digitalWrite(LED_RED, !digitalRead(LED_RED)); // show alive
+    // update_adc();                                 // update batterry voltage
+    if (batmv < setmv) {                           // update ssr output
+      digitalWrite(SSR_DRIVE, LOW);
+      ssrOff++;
+    } else {
+      if (positiveCycle == true) {
+        positiveCycle = false;
+        digitalWrite(SSR_DRIVE, HIGH);
+        ssrOn++;
+      }
+    }
+  }
+
+  if (milliSeconds == 15) {
+    // update_adc();       // update batterry voltage
+    if (batmv < setmv) { // update ssr output
+      digitalWrite(SSR_DRIVE, LOW);
+      ssrOff++;
+    } else {
+      if (positiveCycle == false) {
+        positiveCycle = true;
+        digitalWrite(SSR_DRIVE, HIGH);
+        ssrOn++;
+      }
+    }
+  }
+
+  if (zcdLastCount != zcdCount) { // check for zero crossing
+    zcdLastCount = zcdCount;
+    if (milliSeconds > 3) // noise blanking for 3 ms
+      milliSeconds = 0;   // then allow synchronisation with AC line
+  }
 }
 
 void loop() {
   wdt_reset();
-  zcdUpdate();
   aceBus.update();
 
-  uint16_t adc = analogRead(VBAT_SENSE);  // use local vbat for override
-  if (adc > 800)
-    adc = 800;       // limit adc to 32 V
-  batmv = adc * 40;  // convert to mv
-
-  if (batmv < VMIN){
-    ssrState = LOW;  // under voltage so force off
-    dutyCycle = ssr_kMinDutyCycle;
-  } else if (batmv > VMAX){
-    ssrState = HIGH;  // over voltage so force on
-    dutyCycle = ssr_kMaxDutyCycle;
-  } else {
-    dutyCycle = (batmv - VMIN) / 10;
+  static unsigned long time = 0; // assume max loop time is less than 1 ms
+  unsigned long now = micros();
+  if (now >= time + 1000) {
+    update_1ms();
+    if (now >= time + 1500)
+      time = now;
+    else
+      time += 1000;
   }
-
-  digitalWrite(SSR_DRIVE, ssrState);
-  digitalWrite(LED_GREEN, ssrState);
-
-  digitalWrite(LED_RED, millis() & 0x80); // show device is alive
 }
 
 void aceCallback(tinframe_t *frame) {
@@ -117,8 +144,8 @@ void aceCallback(tinframe_t *frame) {
   int16_t value;
   if (sig_decode(msg, ACEBMS_VBAT, &value) != FMT_NULL) {
     uint32_t senseVoltage = (value + 5) / 10 - 10;
-    digitalWrite(LED_AMBER, !digitalRead(LED_AMBER));  // show rx data
-    lastBMSUpdate = millis();
+    digitalWrite(LED_AMBER, !digitalRead(LED_AMBER)); // show rx data
+    lastBMSUpdate = micros();
   }
   if (sig_decode(msg, ACEBMS_RQST, &value) != FMT_NULL) {
     uint8_t frameSequence = value;
@@ -126,9 +153,19 @@ void aceCallback(tinframe_t *frame) {
       tinframe_t txFrame;
       msg_t *txMsg = (msg_t *)txFrame.data;
       sig_encode(txMsg, ACEDUMP_VBAT, batmv);
-      sig_encode(txMsg, ACEDUMP_DUTY, dutyCycle);
-      if (aceBus.write(&txFrame) != AceBus_kOK) {
+      uint16_t duty = 0;
+      if ((ssrOn > 0) && (ssrOn < 320)) {
+        duty = (100 * ssrOn) / (ssrOn + ssrOff);
       }
+      ssrOn = 0;
+      ssrOff = 0;
+      sig_encode(txMsg, ACEDUMP_DUTY, duty);
+      aceBus.write(&txFrame);
+    }
+  }
+  if (sig_decode(msg, ACEDUMP_VSET, &value) != FMT_NULL) {
+    if((value <= VMAX) && (value >= VMIN)){
+      setmv = value;
     }
   }
 }

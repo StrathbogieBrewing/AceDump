@@ -10,10 +10,17 @@
   (ACEDUMP_STATUS | SIG_WORD | SIG_OFF0 | SIG_MILL | SIG_UINT)
 #define ACEDUMP_DUTY                                                           \
   (ACEDUMP_STATUS | SIG_BYTE | SIG_OFF2 | SIG_UNIT | SIG_UINT)
+#define ACEDUMP_ENERGY                                                         \
+  (ACEDUMP_STATUS | SIG_WORD | SIG_OFF4 | SIG_MILL | SIG_UINT)
+#define ACEDUMP_PERIOD                                                           \
+  (ACEDUMP_STATUS | SIG_WORD | SIG_OFF6 | SIG_MILL | SIG_UINT)
 
 #define ACEDUMP_VSET                                                           \
   (ACEDUMP_CONFIG | SIG_WORD | SIG_OFF0 | SIG_MILL | SIG_UINT)
 
-#define ACEDUMP_NAMES  {"Vdm", ACEDUMP_VBAT}, { "Ddm", ACEDUMP_DUTY }
+#define ACEDUMP_NAMES                                                          \
+  {"Vdm", ACEDUMP_VBAT}, {"Ddm", ACEDUMP_DUTY}, {"Edm", ACEDUMP_ENERGY}, {     \
+    "Pdm", ACEDUMP_PERIOD                                                      \
+  }
 
 #endif // ACEDUMP_H

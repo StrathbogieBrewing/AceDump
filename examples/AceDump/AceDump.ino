@@ -6,7 +6,7 @@
 #include "AceBus.h"
 #include "AceDump.h"
 
-#define VMAX (27000)
+#define VMAX (26900)
 #define VMIN (26500)
 #define VSET (26700)
 
@@ -39,6 +39,7 @@ static uint16_t setmv = VSET;
 static uint16_t ssrOn = 0;
 static uint16_t ssrOff = 0;
 static uint32_t energyCounter = 0;
+static uint16_t energy = 0;
 
 static uint16_t linePeriod = 0;
 
@@ -161,15 +162,28 @@ void update_1ms(void) {
     redTimer = 50; // show device is alive
   }
 
-  if (zcdLastMicros != zcdMicros) { // check for zero crossing
-    noInterrupts();
-    unsigned long delta = zcdMicros - zcdLastMicros;
-    interrupts();
-    if ((delta > 18000L) && (delta < 22000L))
+  energy = ((energyCounter * ENERGY_SCALE) >> 16L);
+  if(energy > 8000L)  // limit to 8 kwh / day
+        setmv = VMAX;
+
+  noInterrupts();
+  unsigned long zcd = zcdMicros;
+  interrupts();
+
+  if (zcdLastMicros != zcd) { // check for zero crossing
+    unsigned long delta = zcd - zcdLastMicros;
+    if ((delta > 16000L) && (delta < 24000L))
       linePeriod = delta;
-    zcdLastMicros = zcdMicros;
+    zcdLastMicros = zcd;
     if (milliSeconds > 3) // noise blanking for 3 ms
       milliSeconds = 0;   // then allow synchronisation with AC line
+  } else {
+    unsigned long delta = micros() - zcdLastMicros;
+    if (delta > 100000L) {
+      linePeriod = 0;
+      energyCounter = 0;
+      setmv = VSET;
+    }
   }
 }
 
@@ -210,8 +224,7 @@ void aceCallback(tinframe_t *frame) {
       ssrOn = 0;
       ssrOff = 0;
       sig_encode(txMsg, ACEDUMP_DUTY, duty);
-      sig_encode(txMsg, ACEDUMP_ENERGY,
-                 ((energyCounter * ENERGY_SCALE) >> 16L));
+      sig_encode(txMsg, ACEDUMP_ENERGY, energy);
       sig_encode(txMsg, ACEDUMP_PERIOD, linePeriod);
       aceBus.write(&txFrame);
     }

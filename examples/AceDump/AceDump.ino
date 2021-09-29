@@ -44,6 +44,7 @@ static uint16_t energy = 0;
 static uint16_t duty = 0;
 
 static uint16_t linePeriod = 0;
+static uint32_t linePeriodFilter = 0;
 
 static uint16_t redTimer = 0;
 static uint16_t greenTimer = 0;
@@ -108,7 +109,7 @@ void update_adc(void) {
   adc_filter -= (adc_filter >> 6);
   adc_filter += adc;
   batmv = (adc_filter >> 3) * 5; // convert to mv
-  batcv = ((uint32_t)(batmv + 5) * 6554L) >> 16;  // divide by 10
+  batcv = ((uint32_t)(batmv + 5) * 6554L) >> 16L;  // divide by 10
 }
 
 void update_1ms(void) {
@@ -177,20 +178,27 @@ void update_1ms(void) {
     ssrOff = 0;
   }
 
+  aceBus.update();
+
   energy = ((energyCounter * ENERGY_SCALE) >> 16L);
   if(energy > 8000L)  // limit to 8 kwh / day
         setmv = VMAX;
-
-  aceBus.update();
 
   noInterrupts();
   unsigned long zcd = zcdMicros;
   interrupts();
 
+  aceBus.update();
+
   if (zcdLastMicros != zcd) { // check for zero crossing
     unsigned long delta = zcd - zcdLastMicros;
     if ((delta > 16000L) && (delta < 24000L))
-      linePeriod = ((delta + 5) * 6554L) >> 16;  // divide by 10
+      // linePeriod = ((delta + 5) * 6554L) >> 16L;  // divide by 10
+      if(linePeriodFilter == 0)
+        linePeriodFilter = delta >> 4L;
+      linePeriodFilter -= linePeriodFilter >> 4L; // filter
+      linePeriodFilter += delta;
+      linePeriod = (linePeriodFilter * 41L) >> 16L;  // divide by 100
     zcdLastMicros = zcd;
     if (milliSeconds > 3) // noise blanking for 3 ms
       milliSeconds = 0;   // then allow synchronisation with AC line
@@ -198,6 +206,7 @@ void update_1ms(void) {
     unsigned long delta = micros() - zcdLastMicros;
     if (delta > 100000L) {
       linePeriod = 0;
+      linePeriodFilter = 0;
       energyCounter = 0;
       setmv = VSET;
     }

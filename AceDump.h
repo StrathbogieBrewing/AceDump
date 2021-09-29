@@ -13,15 +13,15 @@
 #define ACEDUMP_ENERGY                                                         \
   (ACEDUMP_STATUS | SIG_WORD | SIG_OFF4 | SIG_UNIT | SIG_UINT)
 #define ACEDUMP_PERIOD                                                         \
-  (ACEDUMP_STATUS | SIG_WORD | SIG_OFF6 | SIG_CENT | SIG_UINT)
+  (ACEDUMP_STATUS | SIG_WORD | SIG_OFF6 | SIG_DECI | SIG_UINT)
 
 #define ACEDUMP_VSET                                                           \
   (ACEDUMP_CONFIG | SIG_WORD | SIG_OFF0 | SIG_CENT | SIG_UINT | SIG_RW)
 
 #define ACEDUMP_NAMES                                                          \
-  {"oven/vbat", ACEDUMP_VBAT}, {"oven/duty", ACEDUMP_DUTY},                    \
-      {"oven/energy", ACEDUMP_ENERGY}, {"oven/period", ACEDUMP_PERIOD}, {      \
-    "oven/vset", ACEDUMP_VSET                                                  \
+  {"dump/vbat", ACEDUMP_VBAT}, {"dump/duty", ACEDUMP_DUTY},                    \
+      {"dump/wh", ACEDUMP_ENERGY}, {"dump/ac", ACEDUMP_PERIOD}, {      \
+    "dump/vset", ACEDUMP_VSET                                                  \
   }
 
 #endif // ACEDUMP_H

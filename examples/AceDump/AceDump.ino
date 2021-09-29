@@ -6,9 +6,9 @@
 #include "AceBus.h"
 #include "AceDump.h"
 
-#define VMAX (26900)
+#define VMAX (26800)
 #define VMIN (26500)
-#define VSET (26700)
+#define VSET (26650)
 
 #define LED_RED (3)
 #define LED_GREEN (4)

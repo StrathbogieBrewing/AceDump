@@ -11,7 +11,7 @@
 #define ACEDUMP_DUTY                                                           \
   (ACEDUMP_STATUS | SIG_BYTE | SIG_OFF2 | SIG_UNIT | SIG_UINT)
 #define ACEDUMP_ENERGY                                                         \
-  (ACEDUMP_STATUS | SIG_WORD | SIG_OFF4 | SIG_UNIT | SIG_UINT)
+  (ACEDUMP_STATUS | SIG_WORD | SIG_OFF4 | SIG_CENT | SIG_UINT)
 #define ACEDUMP_PERIOD                                                         \
   (ACEDUMP_STATUS | SIG_WORD | SIG_OFF6 | SIG_DECI | SIG_UINT)
 
@@ -20,7 +20,7 @@
 
 #define ACEDUMP_NAMES                                                          \
   {"dump/vbat", ACEDUMP_VBAT}, {"dump/duty", ACEDUMP_DUTY},                    \
-      {"dump/wh", ACEDUMP_ENERGY}, {"dump/ac", ACEDUMP_PERIOD}, {      \
+      {"dump/kwh", ACEDUMP_ENERGY}, {"dump/ac", ACEDUMP_PERIOD}, {      \
     "dump/vset", ACEDUMP_VSET                                                  \
   }
 

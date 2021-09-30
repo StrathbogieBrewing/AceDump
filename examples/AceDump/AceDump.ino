@@ -109,7 +109,7 @@ void update_adc(void) {
   adc_filter -= (adc_filter >> 6);
   adc_filter += adc;
   batmv = (adc_filter >> 3) * 5; // convert to mv
-  batcv = ((uint32_t)(batmv + 5) * 6554L) >> 16L;  // divide by 10
+  batcv = SIG_DIVU16BY10(batmv + 5);  // divide by 10
 }
 
 void update_1ms(void) {
@@ -160,9 +160,6 @@ void update_1ms(void) {
 
   aceBus.update();
 
-  // if ((ssrOn & 0x0F) == 0x01)
-  //   greenTimer = 20;
-
   if (seconds) {
     seconds--;
   } else {
@@ -180,8 +177,8 @@ void update_1ms(void) {
 
   aceBus.update();
 
-  energy = ((energyCounter * ENERGY_SCALE) >> 16L);
-  if(energy > 8000L)  // limit to 8 kwh / day
+  energy = (energyCounter * ENERGY_SCALE) >> 16L;
+  if(energy > 8000L)  // limit to 8.0 kwh / day
         setmv = VMAX;
 
   noInterrupts();
@@ -241,7 +238,7 @@ void aceCallback(tinframe_t *frame) {
       msg_t *txMsg = (msg_t *)txFrame.data;
       sig_encode(txMsg, ACEDUMP_VBAT, batcv);
       sig_encode(txMsg, ACEDUMP_DUTY, duty);
-      sig_encode(txMsg, ACEDUMP_ENERGY, energy);
+      sig_encode(txMsg, ACEDUMP_ENERGY, SIG_DIVU16BY10(energy));
       sig_encode(txMsg, ACEDUMP_PERIOD, linePeriod);
       aceBus.write(&txFrame);
     }

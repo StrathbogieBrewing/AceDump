@@ -190,9 +190,8 @@ void update_1ms(void) {
   if (zcdLastMicros != zcd) { // check for zero crossing
     unsigned long delta = zcd - zcdLastMicros;
     if ((delta > 16000L) && (delta < 24000L))
-      // linePeriod = ((delta + 5) * 6554L) >> 16L;  // divide by 10
       if(linePeriodFilter == 0)
-        linePeriodFilter = delta >> 4L;
+        linePeriodFilter = delta << 4L;
       linePeriodFilter -= linePeriodFilter >> 4L; // filter
       linePeriodFilter += delta;
       linePeriod = (linePeriodFilter * 41L) >> 16L;  // divide by 100

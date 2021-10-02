@@ -194,7 +194,7 @@ void update_1ms(void) {
         linePeriodFilter = delta << 4L;
       linePeriodFilter -= linePeriodFilter >> 4L; // filter
       linePeriodFilter += delta;
-      linePeriod = (linePeriodFilter * 41L) >> 16L;  // divide by 100
+      linePeriod = (uint16_t)((linePeriodFilter * 41L) >> 16L);  // divide by 100
     zcdLastMicros = zcd;
     if (milliSeconds > 3) // noise blanking for 3 ms
       milliSeconds = 0;   // then allow synchronisation with AC line
@@ -215,12 +215,12 @@ void loop() {
 
   static unsigned long time = 0; // assume max loop time is less than 1 ms
   unsigned long now = micros();
-  if (now >= time + 1000) {
+  if (now - time >= 1000L) {
     update_1ms();
-    if (now >= time + 1500)
+    if (now - time >= 1500L)
       time = now;
     else
-      time += 1000;
+      time += 1000L;
   }
 }
 

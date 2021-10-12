@@ -3,8 +3,8 @@
 #include "PinChangeInterrupt.h"
 
 #include "AceBMS.h"
-#include "AceBus.h"
 #include "AceDump.h"
+#include "TinBus.h"
 
 #define VMAX (26800)
 #define VMIN (26500)
@@ -29,8 +29,8 @@
 #define ENERGY_SCALE (182L)
 
 #define kRxInterruptPin (2)
-void aceCallback(tinframe_t *frame);
-AceBus aceBus(Serial, kRxInterruptPin, aceCallback);
+void busCallback(unsigned char *data, unsigned char length);
+TinBus tinBus(Serial, ACEBMS_BAUD, kRxInterruptPin, busCallback);
 
 static unsigned long lastBMSUpdate = 0;
 static uint16_t batmv = 0;
@@ -75,7 +75,7 @@ void setup() {
 
   attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(ZCD_DETECT),
                            zcdTriggered, FALLING);
-  aceBus.begin();
+  tinBus.begin();
 }
 
 void update_leds(void) {
@@ -108,8 +108,8 @@ void update_adc(void) {
     adc = 800; // limit adc to 32 V
   adc_filter -= (adc_filter >> 6);
   adc_filter += adc;
-  batmv = (adc_filter >> 3) * 5; // convert to mv
-  batcv = SIG_DIVU16BY10(batmv + 5);  // divide by 10
+  batmv = (adc_filter >> 3) * 5;     // convert to mv
+  batcv = SIG_DIVU16BY10(batmv + 5); // divide by 10
 }
 
 void update_1ms(void) {
@@ -119,9 +119,9 @@ void update_1ms(void) {
   static uint16_t seconds = 0;
 
   update_adc(); // update batterry voltage
-  aceBus.update();
+  tinBus.update();
   update_leds(); // update leds
-  aceBus.update();
+  tinBus.update();
 
   if (milliSeconds < ZCD_TIMEOUT) {
     milliSeconds++;
@@ -158,7 +158,7 @@ void update_1ms(void) {
     }
   }
 
-  aceBus.update();
+  tinBus.update();
 
   if (seconds) {
     seconds--;
@@ -175,26 +175,26 @@ void update_1ms(void) {
     ssrOff = 0;
   }
 
-  aceBus.update();
+  tinBus.update();
 
   energy = (energyCounter * ENERGY_SCALE) >> 16L;
-  if(energy > 8000L)  // limit to 8.0 kwh / day
-        setmv = VMAX;
+  if (energy > 8000L) // limit to 8.0 kwh / day
+    setmv = VMAX;
 
   noInterrupts();
   unsigned long zcd = zcdMicros;
   interrupts();
 
-  aceBus.update();
+  tinBus.update();
 
   if (zcdLastMicros != zcd) { // check for zero crossing
     unsigned long delta = zcd - zcdLastMicros;
     if ((delta > 16000L) && (delta < 24000L))
-      if(linePeriodFilter == 0)
+      if (linePeriodFilter == 0)
         linePeriodFilter = delta << 4L;
-      linePeriodFilter -= linePeriodFilter >> 4L; // filter
-      linePeriodFilter += delta;
-      linePeriod = (uint16_t)((linePeriodFilter * 41L) >> 16L);  // divide by 100
+    linePeriodFilter -= linePeriodFilter >> 4L; // filter
+    linePeriodFilter += delta;
+    linePeriod = (uint16_t)((linePeriodFilter * 41L) >> 16L); // divide by 100
     zcdLastMicros = zcd;
     if (milliSeconds > 3) // noise blanking for 3 ms
       milliSeconds = 0;   // then allow synchronisation with AC line
@@ -211,7 +211,7 @@ void update_1ms(void) {
 
 void loop() {
   wdt_reset();
-  aceBus.update();
+  tinBus.update();
 
   static unsigned long time = 0; // assume max loop time is less than 1 ms
   unsigned long now = micros();
@@ -224,29 +224,28 @@ void loop() {
   }
 }
 
-void aceCallback(tinframe_t *frame) {
-  msg_t *msg = (msg_t *)(frame->data);
+void busCallback(unsigned char *data, unsigned char length) {
+  msg_t *msg = (msg_t *)data;
   int16_t value;
   if (sig_decode(msg, ACEBMS_RQST, &value) != FMT_NULL) {
     lastBMSUpdate = micros();
     if ((value & 0x0003) == 0)
       amberTimer = 50; // show rx data
-    uint16_t frameSequence = value;
-    if ((frameSequence & 0x03) == 0x02) {
-      tinframe_t txFrame;
-      msg_t *txMsg = (msg_t *)txFrame.data;
-      sig_encode(txMsg, ACEDUMP_VBAT, batcv);
-      sig_encode(txMsg, ACEDUMP_DUTY, duty);
-      sig_encode(txMsg, ACEDUMP_ENERGY, SIG_DIVU16BY10(energy));
-      sig_encode(txMsg, ACEDUMP_PERIOD, linePeriod);
-      aceBus.write(&txFrame);
+    uint8_t frameSequence = (uint16_t)value;
+    if ((frameSequence & 0x0F) == (SIG_MSG_ID(ACEDUMP_STATUS) & 0x0F)) {
+      msg_t txMsg;
+      sig_encode(&txMsg, ACEDUMP_VBAT, batcv);
+      sig_encode(&txMsg, ACEDUMP_DUTY, duty);
+      sig_encode(&txMsg, ACEDUMP_ENERGY, SIG_DIVU16BY10(energy));
+      uint8_t size = sig_encode(&txMsg, ACEDUMP_PERIOD, linePeriod);
+      tinBus.write((uint8_t *)&txMsg, size, MEDIUM_PRIORITY);
     }
   }
   if (sig_decode(msg, ACEDUMP_VSET, &value) != FMT_NULL) {
     uint16_t mv = value * 10;
     if ((mv <= VMAX) && (mv >= VMIN)) {
       setmv = mv;
-      aceBus.write(frame);  // acknowledgement
+      // tinBus.write(frame);  // acknowledgement
     }
   }
 }

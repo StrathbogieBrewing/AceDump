@@ -4,7 +4,7 @@
 
 #include "AceBMS.h"
 #include "AceDump.h"
-#include "TinBus.h"
+#include "AceBus.h"
 
 #define VMAX (26800)
 #define VMIN (26500)
@@ -30,7 +30,7 @@
 
 #define kRxInterruptPin (2)
 void busCallback(unsigned char *data, unsigned char length);
-TinBus tinBus(Serial, ACEBMS_BAUD, kRxInterruptPin, busCallback);
+AceBus AceBus(Serial, ACEBMS_BAUD, kRxInterruptPin, busCallback);
 
 static unsigned long lastBMSUpdate = 0;
 static uint16_t batmv = 0;
@@ -75,7 +75,7 @@ void setup() {
 
   attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(ZCD_DETECT),
                            zcdTriggered, FALLING);
-  tinBus.begin();
+  AceBus.begin();
 }
 
 void update_leds(void) {
@@ -119,9 +119,9 @@ void update_1ms(void) {
   static uint16_t seconds = 0;
 
   update_adc(); // update batterry voltage
-  tinBus.update();
+  AceBus.update();
   update_leds(); // update leds
-  tinBus.update();
+  AceBus.update();
 
   if (milliSeconds < ZCD_TIMEOUT) {
     milliSeconds++;
@@ -158,7 +158,7 @@ void update_1ms(void) {
     }
   }
 
-  tinBus.update();
+  AceBus.update();
 
   if (seconds) {
     seconds--;
@@ -175,17 +175,17 @@ void update_1ms(void) {
     ssrOff = 0;
   }
 
-  tinBus.update();
+  AceBus.update();
 
   energy = (energyCounter * ENERGY_SCALE) >> 16L;
-  if (energy > 8000L) // limit to 8.0 kwh / day
-    setmv = VMAX;
+  // if (energy > 8000L) // limit to 8.0 kwh / day
+  //   setmv = VMAX;
 
   noInterrupts();
   unsigned long zcd = zcdMicros;
   interrupts();
 
-  tinBus.update();
+  AceBus.update();
 
   if (zcdLastMicros != zcd) { // check for zero crossing
     unsigned long delta = zcd - zcdLastMicros;
@@ -211,7 +211,7 @@ void update_1ms(void) {
 
 void loop() {
   wdt_reset();
-  tinBus.update();
+  AceBus.update();
 
   static unsigned long time = 0; // assume max loop time is less than 1 ms
   unsigned long now = micros();
@@ -238,14 +238,14 @@ void busCallback(unsigned char *data, unsigned char length) {
       sig_encode(&txMsg, ACEDUMP_DUTY, duty);
       sig_encode(&txMsg, ACEDUMP_ENERGY, SIG_DIVU16BY10(energy));
       uint8_t size = sig_encode(&txMsg, ACEDUMP_PERIOD, linePeriod);
-      tinBus.write((uint8_t *)&txMsg, size, MEDIUM_PRIORITY);
+      AceBus.write((uint8_t *)&txMsg, size, MEDIUM_PRIORITY);
     }
   }
   if (sig_decode(msg, ACEDUMP_VSET, &value) != FMT_NULL) {
     uint16_t mv = value * 10;
     if ((mv <= VMAX) && (mv >= VMIN)) {
       setmv = mv;
-      // tinBus.write(frame);  // acknowledgement
+      // AceBus.write(frame);  // acknowledgement
     }
   }
 }
